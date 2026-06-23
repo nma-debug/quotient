@@ -5,7 +5,7 @@ import { useTest, EXTEND_BY } from '../store/gameStore'
 import { abilityMean, abilitySD } from '../lib/ability'
 import { scoreFromAbility, shareText, quotientMargin } from '../lib/scoring'
 import { ScoreReveal } from '../components/ScoreReveal'
-import { Disclaimer } from '../components/Disclaimer'
+import { SiteFooter } from '../components/SiteFooter'
 import { AdSlot } from '../components/AdSlot'
 import type { Result } from '../types'
 
@@ -38,10 +38,10 @@ function saveBest(result: Result) {
 interface Props {
   onRestart: () => void
   onExtend: () => void
-  onAbout: () => void
+  onNav: (route: string) => void
 }
 
-export function Results({ onRestart, onExtend, onAbout }: Props) {
+export function Results({ onRestart, onExtend, onNav }: Props) {
   const answers = useTest((s) => s.answers)
   const questionMap = useTest((s) => s.questionMap)
   const ability = useTest((s) => s.ability)
@@ -168,15 +168,7 @@ export function Results({ onRestart, onExtend, onAbout }: Props) {
         </div>
       </section>
 
-      <footer className="mt-10 border-t border-mist/15 pt-6">
-        <button
-          onClick={onAbout}
-          className="mb-4 font-body text-sm text-mist underline-offset-4 hover:text-paper hover:underline"
-        >
-          About Quotient & how scoring works
-        </button>
-        <Disclaimer />
-      </footer>
+      <SiteFooter onNav={onNav} />
     </div>
   )
 }

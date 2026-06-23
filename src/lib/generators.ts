@@ -20,6 +20,30 @@ function diffBand(r: number): Difficulty {
   return r < 334 ? 'easy' : r < 667 ? 'medium' : 'hard'
 }
 
+/** Stable short hash so curated items get unique, content-derived ids. */
+function hashId(s: string): string {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
+
+function isPerfectSquare(n: number): boolean {
+  if (n < 0) return false
+  const r = Math.round(Math.sqrt(n))
+  return r * r === n
+}
+
+const clampRating = (r: number) => Math.max(60, Math.min(960, Math.round(r)))
+
+/** Items whose rating is closest to the target difficulty (widening until non-empty). */
+function nearestPool<T extends { rating: number }>(items: T[], diff: number, window = 170): T[] {
+  for (let w = window; w <= 1100; w += 120) {
+    const pool = items.filter((i) => Math.abs(i.rating - diff) <= w)
+    if (pool.length) return pool
+  }
+  return items
+}
+
 function makeQ(
   id: string,
   category: Category,
@@ -124,7 +148,7 @@ function seqPrimes(_diff: number): Question | null {
 }
 
 function seqSquares(diff: number): Question | null {
-  const start = diff < 400 ? rint(1, 5) : rint(3, 11)
+  const start = diff < 400 ? rint(1, 7) : rint(4, 15)
   const seq = [0, 1, 2, 3, 4].map(i => (start + i) ** 2)
   const n = start + 5
   const ans = n * n
@@ -135,6 +159,59 @@ function seqSquares(diff: number): Question | null {
     String(ans),
     [String(ans + n), String(ans - (n - 1)), String((start + 6) ** 2), String(seq[4] + (n - 1))],
     `These are perfect squares: ${start}², ${start + 1}², …, ${start + 4}². Next is ${n}² = ${ans}.`,
+  )
+}
+
+function seqLetters(diff: number): Question | null {
+  const step = diff < 350 ? pick([1, 2]) : diff < 650 ? pick([2, 3]) : pick([3, 4, 5])
+  const start = rint(0, 25 - step * 5)
+  const seq = [0, 1, 2, 3, 4].map(i => String.fromCharCode(65 + start + i * step))
+  const ansCode = 65 + start + 5 * step
+  const ans = String.fromCharCode(ansCode)
+  const stepWord = step === 1 ? 'consecutive letter' : `${step}${step === 2 ? 'nd' : step === 3 ? 'rd' : 'th'} letter`
+  return makeQ(
+    `gen:seq:alpha:${start}:${step}`,
+    'sequence', 'letter-series', clampRating(220 + step * 110),
+    `What letter comes next?\n\n${seq.join(', ')}, __`,
+    ans,
+    [String.fromCharCode(ansCode + 1), String.fromCharCode(ansCode - 1), String.fromCharCode(ansCode + step)],
+    `The series advances by every ${stepWord} (skip ${step - 1}). After ${seq[4]} comes ${ans}.`,
+  )
+}
+
+function seqInterleaved(diff: number): Question | null {
+  if (diff < 480) return null // an inherently hard style — skip for easy targets
+  // Two arithmetic sequences interleaved; the next term continues the first.
+  const a0 = rint(1, 9), da = rint(2, diff < 700 ? 8 : 14)
+  const b0 = rint(10, 40), db = rint(3, diff < 700 ? 12 : 18)
+  const seq = [a0, b0, a0 + da, b0 + db, a0 + 2 * da, b0 + 2 * db]
+  const ans = a0 + 3 * da
+  return makeQ(
+    `gen:seq:inter:${a0}:${da}:${b0}:${db}`,
+    'sequence', 'interleaved', clampRating(620 + (da + db) * 5),
+    `What comes next?\n\n${seq.join(', ')}, __`,
+    String(ans),
+    [String(b0 + 3 * db), String(ans + da), String(seq[5] + db)],
+    `Two sequences alternate: positions 1,3,5 go ${a0}, ${a0 + da}, ${a0 + 2 * da} (step ${da}); positions 2,4,6 go ${b0}, ${b0 + db}, ${b0 + 2 * db} (step ${db}). The next term continues the first: ${a0 + 2 * da} + ${da} = ${ans}.`,
+  )
+}
+
+function seqQuadratic(diff: number): Question | null {
+  if (diff < 380) return null // medium-hard style — skip for easy targets
+  // Differences themselves increase by a constant (second difference constant).
+  const start = rint(1, 6)
+  const d0 = rint(1, 4)
+  const dd = diff < 600 ? pick([1, 2]) : pick([2, 3])
+  const seq = [start]
+  for (let i = 0; i < 4; i++) seq.push(seq[i] + d0 + i * dd)
+  const ans = seq[4] + d0 + 4 * dd
+  return makeQ(
+    `gen:seq:quad:${start}:${d0}:${dd}`,
+    'sequence', 'growing-difference', clampRating(560 + dd * 60),
+    `What comes next?\n\n${seq.join(', ')}, __`,
+    String(ans),
+    [String(seq[4] + d0 + 3 * dd), String(ans + dd), String(seq[4] + (seq[4] - seq[3]))],
+    `The gaps grow by ${dd} each step: ${seq.slice(1).map((v, i) => v - seq[i]).join(', ')}. The next gap is ${d0 + 4 * dd}, so ${seq[4]} + ${d0 + 4 * dd} = ${ans}.`,
   )
 }
 
@@ -176,18 +253,42 @@ const ANALOGIES: AnalogyItem[] = [
   { prompt: 'Ore is to Metal as Grape is to __', answer: 'Wine', distractors: ['Juice', 'Fruit', 'Raisin'], explanation: 'Ore is processed (smelted) to produce metal. Grapes are fermented to produce wine.', rating: 430 },
   { prompt: 'Hypothesis is to Theory as Draft is to __', answer: 'Publication', distractors: ['Manuscript', 'Proof', 'Revision'], explanation: 'A hypothesis matures into a theory through evidence. A draft is refined into a publication.', rating: 680 },
   { prompt: 'Cocoon is to Butterfly as Larva is to __', answer: 'Adult insect', distractors: ['Pupa', 'Egg', 'Grub'], explanation: 'A cocoon is the stage before a butterfly. A larva is the stage before an adult insect.', rating: 380 },
+  // Easy opposites / pairs
+  { prompt: 'Big is to Small as Tall is to __', answer: 'Short', distractors: ['Wide', 'Long', 'Huge'], explanation: 'Big and Small are opposites. Tall and Short are opposites.', rating: 150 },
+  { prompt: 'Day is to Night as Open is to __', answer: 'Closed', distractors: ['Wide', 'Door', 'Empty'], explanation: 'Day and Night are opposites. Open and Closed are opposites.', rating: 160 },
+  { prompt: 'Fast is to Slow as Early is to __', answer: 'Late', distractors: ['Quick', 'Soon', 'Time'], explanation: 'Fast and Slow are opposites. Early and Late are opposites.', rating: 170 },
+  // Easy part / pair
+  { prompt: 'Puppy is to Dog as Kitten is to __', answer: 'Cat', distractors: ['Mouse', 'Lion', 'Pet'], explanation: 'A puppy is a young dog. A kitten is a young cat.', rating: 180 },
+  { prompt: 'Hand is to Glove as Foot is to __', answer: 'Sock', distractors: ['Shoe', 'Toe', 'Leg'], explanation: 'A glove covers a hand. A sock covers a foot.', rating: 220 },
+  { prompt: 'Bird is to Nest as Bee is to __', answer: 'Hive', distractors: ['Honey', 'Flower', 'Web'], explanation: 'A bird lives in a nest. A bee lives in a hive.', rating: 240 },
+  { prompt: 'Pen is to Write as Knife is to __', answer: 'Cut', distractors: ['Sharp', 'Metal', 'Kitchen'], explanation: 'A pen is used to write. A knife is used to cut.', rating: 230 },
+  // Medium function / place
+  { prompt: 'Library is to Books as Gallery is to __', answer: 'Paintings', distractors: ['Statues', 'Visitors', 'Walls'], explanation: 'A library houses books. A gallery houses paintings.', rating: 360 },
+  { prompt: 'Captain is to Ship as Pilot is to __', answer: 'Aircraft', distractors: ['Runway', 'Sky', 'Engine'], explanation: 'A captain commands a ship. A pilot commands an aircraft.', rating: 400 },
+  { prompt: 'Author is to Novel as Composer is to __', answer: 'Symphony', distractors: ['Orchestra', 'Piano', 'Lyrics'], explanation: 'An author creates a novel. A composer creates a symphony.', rating: 460 },
+  { prompt: 'Thermometer is to Temperature as Odometer is to __', answer: 'Distance', distractors: ['Speed', 'Time', 'Fuel'], explanation: 'A thermometer measures temperature. An odometer measures distance travelled.', rating: 520 },
+  { prompt: 'Herd is to Cattle as Flock is to __', answer: 'Sheep', distractors: ['Wolves', 'Fish', 'Birdsong'], explanation: 'A herd is a group of cattle. A flock is a group of sheep.', rating: 420 },
+  { prompt: 'Island is to Ocean as Oasis is to __', answer: 'Desert', distractors: ['Water', 'Palm', 'Mirage'], explanation: 'An island is land surrounded by ocean. An oasis is greenery surrounded by desert.', rating: 540 },
+  { prompt: 'Sculptor is to Clay as Poet is to __', answer: 'Words', distractors: ['Paint', 'Rhyme', 'Paper'], explanation: 'A sculptor shapes clay. A poet shapes words.', rating: 500 },
+  { prompt: 'Drought is to Water as Famine is to __', answer: 'Food', distractors: ['Rain', 'Crops', 'Hunger'], explanation: 'A drought is a severe shortage of water. A famine is a severe shortage of food.', rating: 480 },
+  // Hard degree / vocabulary
+  { prompt: 'Whisper is to Shout as Glance is to __', answer: 'Stare', distractors: ['Look', 'Blink', 'Wink'], explanation: 'A whisper is a faint version of a shout. A glance is a faint version of a stare (degree of intensity).', rating: 660 },
+  { prompt: 'Novice is to Expert as Apprentice is to __', answer: 'Master', distractors: ['Student', 'Trainee', 'Beginner'], explanation: 'A novice becomes an expert with experience. An apprentice becomes a master.', rating: 640 },
+  { prompt: 'Loquacious is to Talkative as Taciturn is to __', answer: 'Reserved', distractors: ['Loud', 'Friendly', 'Honest'], explanation: 'Loquacious is a formal synonym of talkative. Taciturn is a formal synonym of reserved (saying little).', rating: 780 },
+  { prompt: 'Cacophony is to Harmony as Chaos is to __', answer: 'Order', distractors: ['Noise', 'Music', 'Disaster'], explanation: 'Cacophony (harsh discord) is the opposite of harmony. Chaos is the opposite of order.', rating: 720 },
+  { prompt: 'Indelible is to Erase as Immovable is to __', answer: 'Move', distractors: ['Lift', 'Push', 'Place'], explanation: 'Indelible means impossible to erase. Immovable means impossible to move (the in-/im- prefix negates the verb).', rating: 760 },
+  { prompt: 'Prologue is to Epilogue as Preface is to __', answer: 'Afterword', distractors: ['Foreword', 'Index', 'Chapter'], explanation: 'A prologue opens and an epilogue closes a work. A preface opens and an afterword closes a book.', rating: 700 },
+  { prompt: 'Cartographer is to Maps as Lexicographer is to __', answer: 'Dictionaries', distractors: ['Books', 'Words', 'Laws'], explanation: 'A cartographer makes maps. A lexicographer compiles dictionaries.', rating: 820 },
+  { prompt: 'Phobia is to Fear as Mania is to __', answer: 'Obsession', distractors: ['Calm', 'Sadness', 'Anger'], explanation: 'A phobia is an extreme fear. A mania is an extreme obsession or compulsion.', rating: 740 },
+  { prompt: 'Etymology is to Words as Genealogy is to __', answer: 'Ancestry', distractors: ['Genes', 'Maps', 'Fossils'], explanation: 'Etymology studies the origins of words. Genealogy studies the origins of ancestry (family lines).', rating: 800 },
+  { prompt: 'Pride is to Lions as Murder is to __', answer: 'Crows', distractors: ['Wolves', 'Fish', 'Bees'], explanation: 'A "pride" is the collective noun for lions. A "murder" is the collective noun for crows.', rating: 860 },
+  { prompt: 'Ductile is to Stretch as Malleable is to __', answer: 'Hammer', distractors: ['Melt', 'Break', 'Bend'], explanation: 'Ductile means able to be stretched into wire. Malleable means able to be hammered into sheets.', rating: 880 },
 ]
 
 function makeAnalogy(diff: number): Question | null {
-  const pool = diff < 350
-    ? ANALOGIES.filter(a => a.rating < 450)
-    : diff < 650
-      ? ANALOGIES.filter(a => a.rating >= 300 && a.rating < 750)
-      : ANALOGIES.filter(a => a.rating >= 550)
-  if (!pool.length) return makeAnalogy(Math.min(diff + 200, 900))
-  const item = pick(pool)
+  const item = pick(nearestPool(ANALOGIES, diff))
   return makeQ(
-    `gen:ana:${item.answer.replace(/\s+/g, '-')}`,
+    `gen:ana:${hashId(item.prompt)}`,
     'analogy', 'analogy', item.rating,
     item.prompt,
     item.answer,
@@ -279,18 +380,120 @@ const SYLLOGISMS: SyllogismTemplate[] = [
     explanation: 'Divisibility by 6 requires divisibility by 2 AND 3. Since 42 is divisible by 6, it must be divisible by both.',
     rating: 480,
   },
+  {
+    major: 'All even numbers are divisible by 2',
+    minor: '1,024 is an even number',
+    subject: '1,024',
+    conclusion: 'is divisible by 2',
+    distractors: ['is a prime number', 'is odd', 'is not a whole number'],
+    explanation: 'All even numbers are divisible by 2. 1,024 is even, so it is divisible by 2.',
+    rating: 240,
+  },
+  {
+    major: 'All multiples of 10 end in the digit 0',
+    minor: '250 is a multiple of 10',
+    subject: '250',
+    conclusion: 'ends in the digit 0',
+    distractors: ['ends in the digit 5', 'is a prime number', 'is odd'],
+    explanation: 'Every multiple of 10 ends in 0. 250 is a multiple of 10, so it ends in 0.',
+    rating: 260,
+  },
+  {
+    major: 'All squares are rectangles',
+    minor: 'This shape is a square',
+    subject: 'this shape',
+    conclusion: 'is a rectangle',
+    distractors: ['is a circle', 'has five sides', 'is not a quadrilateral'],
+    explanation: 'A square meets the definition of a rectangle (four right angles). So if this shape is a square, it is a rectangle.',
+    rating: 360,
+  },
+  {
+    major: 'No reptiles are warm-blooded',
+    minor: 'Snakes are reptiles',
+    subject: 'Snakes',
+    conclusion: 'are not warm-blooded',
+    distractors: ['are warm-blooded', 'are mammals', 'regulate their own temperature'],
+    explanation: 'No reptile is warm-blooded. Snakes are reptiles, so snakes are not warm-blooded.',
+    rating: 360,
+  },
+  {
+    major: 'All conductors allow electric current to flow',
+    minor: 'Copper is a conductor',
+    subject: 'Copper',
+    conclusion: 'allows electric current to flow',
+    distractors: ['blocks electric current', 'is an insulator', 'is non-metallic'],
+    explanation: 'All conductors allow current to flow. Copper is a conductor, so copper allows current to flow.',
+    rating: 340,
+  },
+  {
+    major: 'All vaccines train the immune system to recognise a pathogen',
+    minor: 'The flu shot is a vaccine',
+    subject: 'The flu shot',
+    conclusion: 'trains the immune system to recognise a pathogen',
+    distractors: ['weakens the immune system', 'is an antibiotic', 'cures an existing infection'],
+    explanation: 'All vaccines train the immune system. The flu shot is a vaccine, so it trains the immune system.',
+    rating: 380,
+  },
+  {
+    major: 'No square number is negative',
+    minor: '−9 is negative',
+    subject: '−9',
+    conclusion: 'is not a square number',
+    distractors: ['is a square number', 'is a perfect cube', 'has a real square root'],
+    explanation: 'No square number can be negative. Since −9 is negative, it cannot be a square number.',
+    rating: 520,
+  },
+  {
+    major: 'All inflationary periods reduce the purchasing power of cash',
+    minor: 'The late 1970s were an inflationary period',
+    subject: 'the late 1970s',
+    conclusion: 'reduced the purchasing power of cash',
+    distractors: ['increased the purchasing power of cash', 'had no effect on prices', 'caused deflation'],
+    explanation: 'Inflationary periods reduce purchasing power. The late 1970s were inflationary, so purchasing power fell.',
+    rating: 560,
+  },
+  {
+    major: 'All catalysts speed up a reaction without being consumed',
+    minor: 'An enzyme is a biological catalyst',
+    subject: 'An enzyme',
+    conclusion: 'speeds up a reaction without being consumed',
+    distractors: ['is consumed by the reaction', 'slows the reaction down', 'has no effect on reaction rate'],
+    explanation: 'Catalysts speed up reactions without being used up. Enzymes are catalysts, so they do the same.',
+    rating: 600,
+  },
+  {
+    major: 'All irrational numbers cannot be written as a ratio of two integers',
+    minor: 'π (pi) is irrational',
+    subject: 'π',
+    conclusion: 'cannot be written as a ratio of two integers',
+    distractors: ['equals exactly 22/7', 'is a whole number', 'terminates after a few decimals'],
+    explanation: 'Irrational numbers cannot be expressed as a ratio of integers. π is irrational, so it cannot be either.',
+    rating: 660,
+  },
+  {
+    major: 'A binding contract requires consideration (something of value exchanged)',
+    minor: 'This agreement involves no consideration',
+    subject: 'this agreement',
+    conclusion: 'is not a binding contract',
+    distractors: ['is a binding contract', 'is enforceable in court', 'requires no agreement to be valid'],
+    explanation: 'If a binding contract requires consideration and this agreement has none, it cannot be a binding contract.',
+    rating: 720,
+  },
+  {
+    major: 'A recursive function needs a base case to be guaranteed to terminate',
+    minor: 'This recursive function has no base case',
+    subject: 'this function',
+    conclusion: 'is not guaranteed to terminate',
+    distractors: ['always terminates quickly', 'runs in constant time', 'needs no stack memory'],
+    explanation: 'Termination is guaranteed only with a base case. This function lacks one, so termination is not guaranteed.',
+    rating: 760,
+  },
 ]
 
 function makeLogicSyllogism(diff: number): Question | null {
-  const pool = diff < 450
-    ? SYLLOGISMS.filter(s => s.rating < 550)
-    : diff < 700
-      ? SYLLOGISMS.filter(s => s.rating >= 350 && s.rating < 750)
-      : SYLLOGISMS.filter(s => s.rating >= 550)
-  if (!pool.length) return makeLogicSyllogism(Math.min(diff + 150, 900))
-  const t = pick(pool)
+  const t = pick(nearestPool(SYLLOGISMS, diff))
   return makeQ(
-    `gen:logic:syl:${t.subject.replace(/\s+/g, '-')}`,
+    `gen:logic:syl:${hashId(t.major + t.subject)}`,
     'logic', 'syllogism', t.rating,
     `${t.major}.\n${t.minor}.\n\nWhat can we conclude about ${t.subject}?`,
     `${t.subject} ${t.conclusion}`,
@@ -299,67 +502,46 @@ function makeLogicSyllogism(diff: number): Question | null {
   )
 }
 
-interface OrderingTemplate {
-  statements: string[]
-  items: [string, string, string]
-  rel: string
-  question: string
-  smallestIdx: 0 | 1 | 2
-  explanation: string
-  rating: number
+interface OrderTheme {
+  ask: 'Who' | 'Which'
+  entities: string[]
+  comp: string // "X comp Y" means X ranks above Y
+  most: string
+  least: string
 }
 
-const ORDERINGS: OrderingTemplate[] = [
-  {
-    statements: ['Alice earns more than Bob', 'Bob earns more than Carol'],
-    items: ['Alice', 'Bob', 'Carol'], rel: 'earns more than',
-    question: 'Who earns the least?', smallestIdx: 2,
-    explanation: 'Alice > Bob > Carol in earnings, so Carol earns the least.',
-    rating: 300,
-  },
-  {
-    statements: ['Project Alpha took longer than Project Beta', 'Project Beta took longer than Project Gamma'],
-    items: ['Project Alpha', 'Project Beta', 'Project Gamma'], rel: 'took longer than',
-    question: 'Which project was completed the fastest?', smallestIdx: 2,
-    explanation: 'Alpha > Beta > Gamma in duration, so Gamma was the fastest.',
-    rating: 380,
-  },
-  {
-    statements: ['Model X is more accurate than Model Y', 'Model Y is more accurate than Model Z'],
-    items: ['Model X', 'Model Y', 'Model Z'], rel: 'is more accurate than',
-    question: 'Which model is least accurate?', smallestIdx: 2,
-    explanation: 'X > Y > Z in accuracy, so Model Z is least accurate.',
-    rating: 420,
-  },
-  {
-    statements: ['Building A is taller than Building C', 'Building C is taller than Building B'],
-    items: ['Building A', 'Building B', 'Building C'], rel: 'mixed',
-    question: 'Which building is the shortest?', smallestIdx: 1,
-    explanation: 'A > C > B in height. The middle item (C) is not the smallest — Building B is.',
-    rating: 600,
-  },
-  {
-    statements: ['Country P has a higher GDP than Country R', 'Country R has a higher GDP than Country Q'],
-    items: ['Country P', 'Country Q', 'Country R'], rel: 'mixed',
-    question: 'Which country has the lowest GDP?', smallestIdx: 1,
-    explanation: 'P > R > Q in GDP. Country Q has the lowest GDP.',
-    rating: 580,
-  },
+const ORDER_THEMES: OrderTheme[] = [
+  { ask: 'Who', entities: ['Alice', 'Bob', 'Carol', 'David', 'Emma', 'Frank', 'Grace', 'Hannah'], comp: 'is older than', most: 'is the oldest', least: 'is the youngest' },
+  { ask: 'Who', entities: ['Alice', 'Bob', 'Carol', 'David', 'Emma', 'Frank', 'Grace', 'Hannah'], comp: 'earns more than', most: 'earns the most', least: 'earns the least' },
+  { ask: 'Who', entities: ['Maya', 'Noah', 'Omar', 'Priya', 'Quinn', 'Ravi', 'Sara', 'Theo'], comp: 'finished the race ahead of', most: 'finished first', least: 'finished last' },
+  { ask: 'Who', entities: ['Maya', 'Noah', 'Omar', 'Priya', 'Quinn', 'Ravi', 'Sara', 'Theo'], comp: 'scored higher than', most: 'scored the highest', least: 'scored the lowest' },
+  { ask: 'Which', entities: ['Building P', 'Building Q', 'Building R', 'Building S', 'Building T'], comp: 'is taller than', most: 'is the tallest', least: 'is the shortest' },
+  { ask: 'Which', entities: ['the Standard plan', 'the Lite plan', 'the Pro plan', 'the Max plan', 'the Eco plan'], comp: 'costs more than', most: 'is the most expensive', least: 'is the cheapest' },
+  { ask: 'Which', entities: ['Project Alpha', 'Project Beta', 'Project Gamma', 'Project Delta', 'Project Omega'], comp: 'took longer than', most: 'took the longest', least: 'was completed fastest' },
+  { ask: 'Which', entities: ['Model X', 'Model Y', 'Model Z', 'Model W', 'Model V'], comp: 'is more accurate than', most: 'is the most accurate', least: 'is the least accurate' },
+  { ask: 'Which', entities: ['Port Vale', 'Lake City', 'Hill Town', 'River Bend', 'Sea Point'], comp: 'has a larger population than', most: 'has the largest population', least: 'has the smallest population' },
 ]
 
 function makeLogicOrdering(diff: number): Question | null {
-  const pool = diff < 500 ? ORDERINGS.filter(o => o.rating < 520) : ORDERINGS.filter(o => o.rating >= 380)
-  if (!pool.length) return null
-  const t = pick(pool)
-  const answer = t.items[t.smallestIdx]
-  const others = t.items.filter(x => x !== answer)
+  const theme = pick(ORDER_THEMES)
+  const n = diff >= 580 && Math.random() < 0.6 ? 4 : 3
+  const ranking = shuffle(theme.entities).slice(0, n) // ranking[0] ranks highest
+  const statements = ranking.slice(0, n - 1).map((e, i) => `${e} ${theme.comp} ${ranking[i + 1]}`)
+  const sorted = diff < 360
+  const presented = sorted ? statements : shuffle(statements)
+  const askLeast = Math.random() < 0.5
+  const answer = askLeast ? ranking[n - 1] : ranking[0]
+  const others = ranking.filter((e) => e !== answer)
+  // 3-item versions add a "can't tell" foil; 4-item versions use the entities themselves.
+  const distractors = n === 3 ? [...others, "Can't tell from the information given"] : others
+  const rating = clampRating((n === 4 ? 620 : 320) + (sorted ? 0 : 150) + (n === 4 ? 60 : 0))
   return makeQ(
-    `gen:logic:ord:${t.items[0].replace(/\s+/g, '-')}`,
-    'logic', 'ordering', t.rating,
-    `${t.statements.join('.\n')}.\n\n${t.question}`,
+    `gen:logic:ord:${hashId(ranking.join('>') + theme.comp + askLeast)}`,
+    'logic', 'ordering', rating,
+    `${presented.join('.\n')}.\n\n${theme.ask} ${askLeast ? theme.least : theme.most}?`,
     answer,
-    [...others, "Can't tell from the information given"],
-    t.explanation,
+    distractors,
+    `In order: ${ranking.join(' > ')} (ranked by "${theme.comp}"). So ${answer} ${askLeast ? theme.least : theme.most}.`,
   )
 }
 
@@ -376,7 +558,13 @@ function makeLogic(diff: number): Question | null {
 function numPercentage(diff: number): Question | null {
   if (diff < 350) {
     const p = pick([10, 20, 25, 50])
-    const basePool = p === 10 ? [40, 60, 80, 100, 200] : p === 20 ? [30, 40, 50, 100] : p === 25 ? [20, 40, 60, 80] : [30, 40, 60, 80]
+    const basePool = p === 10
+      ? [30, 40, 50, 60, 70, 80, 90, 100, 120, 150, 200]
+      : p === 20
+        ? [20, 30, 35, 40, 45, 50, 60, 80, 100]
+        : p === 25
+          ? [16, 20, 24, 40, 60, 80, 120]
+          : [24, 30, 40, 50, 60, 80, 90, 120]
     const base = pick(basePool)
     const ans = (p / 100) * base
     return makeQ(
@@ -499,6 +687,52 @@ function numInterest(diff: number): Question | null {
   )
 }
 
+function numAverage(diff: number): Question | null {
+  const count = diff < 450 ? 3 : pick([4, 5])
+  const mean = rint(diff < 450 ? 6 : 20, diff < 450 ? 24 : 90)
+  const vals: number[] = []
+  for (let i = 0; i < count - 1; i++) vals.push(rint(Math.max(1, mean - 12), mean + 12))
+  const last = mean * count - vals.reduce((a, b) => a + b, 0)
+  if (last < 1) return null
+  vals.push(last)
+
+  if (diff >= 450 && Math.random() < 0.5) {
+    const shown = vals.slice(0, -1)
+    const missing = vals[vals.length - 1]
+    return makeQ(
+      `gen:num:avgM:${vals.join('-')}`,
+      'numerical', 'average', 560,
+      `The average of ${count} numbers is ${mean}. ${count - 1} of them are ${shown.join(', ')}. What is the missing number?`,
+      String(missing),
+      [String(missing + count), String(missing > count ? missing - count : missing + 2 * count), String(mean)],
+      `The total must be ${mean} × ${count} = ${mean * count}. Missing = ${mean * count} − (${shown.join(' + ')}) = ${missing}.`,
+    )
+  }
+  return makeQ(
+    `gen:num:avg:${vals.join('-')}`,
+    'numerical', 'average', diff < 450 ? 300 : 460,
+    `What is the average (mean) of ${vals.join(', ')}?`,
+    String(mean),
+    [String(mean + 1), String(mean - 1), String(Math.round((mean * count) / (count + 1)))],
+    `Average = sum ÷ count = ${mean * count} ÷ ${count} = ${mean}.`,
+  )
+}
+
+function numFraction(diff: number): Question | null {
+  const denom = pick([4, 5, 6, 8, 10])
+  const num = rint(1, denom - 1)
+  const base = denom * rint(diff < 400 ? 2 : 5, diff < 400 ? 12 : 40)
+  const ans = (num / denom) * base
+  return makeQ(
+    `gen:num:frac:${num}:${denom}:${base}`,
+    'numerical', 'fraction', diff < 400 ? 280 : 460,
+    `What is ${num}/${denom} of ${base}?`,
+    String(ans),
+    [String(ans + denom), String(ans > denom ? ans - denom : ans + 2 * denom), String(base - ans)],
+    `${num}/${denom} of ${base} = (${base} ÷ ${denom}) × ${num} = ${base / denom} × ${num} = ${ans}.`,
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ODD-ONE-OUT — curated, unambiguous groups
 // ─────────────────────────────────────────────────────────────────────────────
@@ -533,18 +767,48 @@ const ODD_GROUPS: OddGroup[] = [
   { items: ['Keynesian', 'Monetarist', 'Supply-side', 'Darwinian'], odd: 'Darwinian', explanation: 'Keynesian, monetarist and supply-side are schools of economic thought. Darwinian refers to evolutionary biology.', rating: 700 },
   { items: ['Acid', 'Base', 'Salt', 'Enzyme'], odd: 'Enzyme', explanation: 'Acids, bases and salts are categories in acid-base chemistry. An enzyme is a biological catalyst — a different domain.', rating: 580 },
   { items: ['25', '36', '49', '54'], odd: '54', explanation: '25, 36 and 49 are perfect squares (5², 6², 7²). 54 is not a perfect square.', rating: 360 },
+  // Geometry / maths
+  { items: ['Square', 'Rectangle', 'Rhombus', 'Circle'], odd: 'Circle', explanation: 'Square, rectangle and rhombus are quadrilaterals (four straight sides). A circle has no straight sides.', rating: 200 },
+  { items: ['Triangle', 'Hexagon', 'Octagon', 'Cube'], odd: 'Cube', explanation: 'Triangle, hexagon and octagon are 2-D polygons. A cube is a 3-D solid.', rating: 240 },
+  { items: ['Sphere', 'Cylinder', 'Cone', 'Pentagon'], odd: 'Pentagon', explanation: 'Sphere, cylinder and cone are 3-D solids. A pentagon is a 2-D shape.', rating: 260 },
+  { items: ['Equilateral', 'Isosceles', 'Scalene', 'Parallelogram'], odd: 'Parallelogram', explanation: 'Equilateral, isosceles and scalene are types of triangle. A parallelogram is a quadrilateral.', rating: 420 },
+  { items: ['Addition', 'Subtraction', 'Multiplication', 'Equation'], odd: 'Equation', explanation: 'Addition, subtraction and multiplication are arithmetic operations. An equation is a statement of equality.', rating: 340 },
+  { items: ['Square root', 'Logarithm', 'Derivative', 'Thermostat'], odd: 'Thermostat', explanation: 'Square root, logarithm and derivative are mathematical operations. A thermostat is a device.', rating: 420 },
+  // Units
+  { items: ['Inch', 'Metre', 'Mile', 'Kilogram'], odd: 'Kilogram', explanation: 'Inch, metre and mile measure length. A kilogram measures mass.', rating: 280 },
+  { items: ['Byte', 'Kilobyte', 'Megabyte', 'Hertz'], odd: 'Hertz', explanation: 'Byte, kilobyte and megabyte are units of digital data. Hertz is a unit of frequency.', rating: 440 },
+  // Science / chemistry / biology
+  { items: ['Mercury', 'Venus', 'Mars', 'Sun'], odd: 'Sun', explanation: 'Mercury, Venus and Mars are planets. The Sun is a star.', rating: 240 },
+  { items: ['Oxygen', 'Hydrogen', 'Helium', 'Water'], odd: 'Water', explanation: 'Oxygen, hydrogen and helium are chemical elements. Water is a compound (H₂O).', rating: 360 },
+  { items: ['Helium', 'Neon', 'Argon', 'Nitrogen'], odd: 'Nitrogen', explanation: 'Helium, neon and argon are noble gases (Group 18). Nitrogen is not a noble gas.', rating: 640 },
+  { items: ['Iron', 'Cobalt', 'Nickel', 'Aluminium'], odd: 'Aluminium', explanation: 'Iron, cobalt and nickel are ferromagnetic (strongly attracted to magnets). Aluminium is not.', rating: 720 },
+  { items: ['Quartz', 'Granite', 'Basalt', 'Limestone'], odd: 'Quartz', explanation: 'Granite, basalt and limestone are rocks. Quartz is a single mineral.', rating: 620 },
+  { items: ['Liver', 'Heart', 'Kidney', 'Femur'], odd: 'Femur', explanation: 'Liver, heart and kidney are soft internal organs. The femur is a bone.', rating: 420 },
+  { items: ['Aorta', 'Vein', 'Artery', 'Trachea'], odd: 'Trachea', explanation: 'Aorta, vein and artery carry blood. The trachea (windpipe) carries air.', rating: 600 },
+  { items: ['Mitochondrion', 'Ribosome', 'Nucleus', 'Capillary'], odd: 'Capillary', explanation: 'Mitochondrion, ribosome and nucleus are organelles inside a cell. A capillary is a blood vessel.', rating: 660 },
+  { items: ['Cumulus', 'Stratus', 'Cirrus', 'Magma'], odd: 'Magma', explanation: 'Cumulus, stratus and cirrus are cloud types. Magma is molten rock.', rating: 380 },
+  // Geography (safe facts)
+  { items: ['Brazil', 'Chile', 'Peru', 'Mexico'], odd: 'Mexico', explanation: 'Brazil, Chile and Peru are in South America. Mexico is in North America.', rating: 500 },
+  // Language / grammar
+  { items: ['Comma', 'Colon', 'Semicolon', 'Paragraph'], odd: 'Paragraph', explanation: 'Comma, colon and semicolon are punctuation marks. A paragraph is a block of text.', rating: 360 },
+  { items: ['Verb', 'Adverb', 'Adjective', 'Syllable'], odd: 'Syllable', explanation: 'Verb, adverb and adjective are parts of speech. A syllable is a unit of sound.', rating: 440 },
+  { items: ['Noun', 'Pronoun', 'Gerund', 'Pixel'], odd: 'Pixel', explanation: 'Noun, pronoun and gerund are grammatical terms. A pixel is a unit of a digital image.', rating: 360 },
+  { items: ['Spanish', 'French', 'Italian', 'Latin'], odd: 'Latin', explanation: 'Spanish, French and Italian are living, widely-spoken languages. Latin is a classical language no longer spoken natively.', rating: 540 },
+  // Arts / music
+  { items: ['Waltz', 'Tango', 'Foxtrot', 'Sonnet'], odd: 'Sonnet', explanation: 'Waltz, tango and foxtrot are dances. A sonnet is a poem.', rating: 480 },
+  { items: ['Red', 'Orange', 'Violet', 'Brown'], odd: 'Brown', explanation: 'Red, orange and violet appear in the visible spectrum (rainbow). Brown is not a spectral colour.', rating: 560 },
+  // Computing / tech
+  { items: ['Stack', 'Queue', 'Array', 'Compiler'], odd: 'Compiler', explanation: 'Stack, queue and array are data structures. A compiler is a program that translates code.', rating: 600 },
+  { items: ['TCP', 'UDP', 'HTTP', 'RAM'], odd: 'RAM', explanation: 'TCP, UDP and HTTP are network protocols. RAM is computer memory hardware.', rating: 660 },
+  // Economics / politics
+  { items: ['Inflation', 'Recession', 'Deflation', 'Photosynthesis'], odd: 'Photosynthesis', explanation: 'Inflation, recession and deflation are economic phenomena. Photosynthesis is a biological process.', rating: 460 },
+  { items: ['Democracy', 'Oligarchy', 'Monarchy', 'Bureaucracy'], odd: 'Bureaucracy', explanation: 'Democracy, oligarchy and monarchy describe who holds sovereign power. Bureaucracy describes administration by officials, not a form of sovereign rule.', rating: 760 },
 ]
 
 function makeOddOneOut(diff: number): Question | null {
-  const pool = diff < 380
-    ? ODD_GROUPS.filter(g => g.rating < 460)
-    : diff < 650
-      ? ODD_GROUPS.filter(g => g.rating >= 260 && g.rating < 700)
-      : ODD_GROUPS.filter(g => g.rating >= 500)
-  if (!pool.length) return makeOddOneOut(Math.min(diff + 200, 900))
-  const g = pick(pool)
+  const g = pick(nearestPool(ODD_GROUPS, diff))
   return {
-    id: `gen:odd:${g.odd.replace(/\s+/g, '-')}`,
+    id: `gen:odd:${hashId(g.items.join(','))}`,
     category: 'odd-one-out',
     difficulty: diffBand(g.rating),
     type: 'multiple-choice',
@@ -557,6 +821,64 @@ function makeOddOneOut(diff: number): Question | null {
   }
 }
 
+function oddNumeric(diff: number): Question | null {
+  // Bias the style toward the requested difficulty (parity easiest, squares hardest).
+  const kind = diff < 320
+    ? pick(['parity', 'multiple'] as const)
+    : diff < 560
+      ? pick(['multiple', 'square'] as const)
+      : pick(['square', 'multiple'] as const)
+  let items: number[] = []
+  let odd = 0
+  let explanation = ''
+  let rating = 300
+
+  if (kind === 'multiple') {
+    const k = rint(3, 9)
+    const set = new Set<number>()
+    while (set.size < 3) set.add(k * rint(2, 12))
+    items = [...set]
+    let guard = 0
+    do { odd = k * rint(2, 12) + rint(1, k - 1); guard++ } while ((items.includes(odd) || odd % k === 0) && guard < 30)
+    if (odd % k === 0) return null
+    explanation = `${items.join(', ')} are all multiples of ${k}. ${odd} is not a multiple of ${k}.`
+    rating = clampRating(240 + k * 25)
+  } else if (kind === 'square') {
+    const set = new Set<number>()
+    while (set.size < 3) { const r = rint(2, 12); set.add(r * r) }
+    items = [...set]
+    let guard = 0
+    do { const r = rint(2, 12); odd = r * r + pick([-2, -1, 1, 2]); guard++ } while ((items.includes(odd) || isPerfectSquare(odd) || odd <= 0) && guard < 30)
+    if (isPerfectSquare(odd) || odd <= 0) return null
+    explanation = `${items.join(', ')} are perfect squares. ${odd} is not a perfect square.`
+    rating = 440
+  } else {
+    const evenMajority = Math.random() < 0.5
+    const set = new Set<number>()
+    while (set.size < 3) { const v = rint(5, 60); if ((v % 2 === 0) === evenMajority) set.add(v) }
+    items = [...set]
+    let guard = 0
+    do { odd = rint(5, 60); guard++ } while ((items.includes(odd) || (odd % 2 === 0) === evenMajority) && guard < 30)
+    if ((odd % 2 === 0) === evenMajority) return null
+    explanation = `${items.join(', ')} are all ${evenMajority ? 'even' : 'odd'} numbers. ${odd} is ${evenMajority ? 'odd' : 'even'}.`
+    rating = 240
+  }
+
+  const options = shuffle([...items, odd]).map(String)
+  return {
+    id: `gen:odd:num:${hashId(items.join(',') + ':' + odd)}`,
+    category: 'odd-one-out',
+    difficulty: diffBand(rating),
+    type: 'multiple-choice',
+    prompt: 'Which number does not belong?',
+    options,
+    answer: String(odd),
+    explanation,
+    style: 'numeric',
+    difficultyRating: rating,
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Top-level dispatcher
 // ─────────────────────────────────────────────────────────────────────────────
@@ -564,11 +886,11 @@ function makeOddOneOut(diff: number): Question | null {
 type Gen = (diff: number) => Question | null
 
 const GENS_BY_CATEGORY: Record<string, Gen[]> = {
-  sequence:    [seqArithmetic, seqGeometric, seqFibonacci, seqPrimes, seqSquares],
+  sequence:    [seqArithmetic, seqGeometric, seqFibonacci, seqPrimes, seqSquares, seqLetters, seqInterleaved, seqQuadratic],
   analogy:     [makeAnalogy],
   logic:       [makeLogic],
-  numerical:   [numPercentage, numRatio, numRate, numInterest],
-  'odd-one-out': [makeOddOneOut],
+  numerical:   [numPercentage, numRatio, numRate, numInterest, numAverage, numFraction],
+  'odd-one-out': [makeOddOneOut, oddNumeric],
 }
 
 const CATEGORIES = Object.keys(GENS_BY_CATEGORY)
@@ -584,7 +906,7 @@ export function generateQuestionAtDifficulty(diff: number, usedIds: string[]): Q
   for (const cat of shuffle(CATEGORIES)) {
     const gens = shuffle(GENS_BY_CATEGORY[cat])
     for (const gen of gens) {
-      for (let attempt = 0; attempt < 10; attempt++) {
+      for (let attempt = 0; attempt < 16; attempt++) {
         const q = gen(d)
         if (q && !used.has(q.id)) return q
       }
