@@ -1,12 +1,12 @@
 import { Brain, ArrowRight } from 'lucide-react'
-import { Disclaimer } from '../components/Disclaimer'
+import { SiteFooter } from '../components/SiteFooter'
 
 interface Props {
   onStart: () => void
-  onAbout: () => void
+  onNav: (route: string) => void
 }
 
-export function Home({ onStart, onAbout }: Props) {
+export function Home({ onStart, onNav }: Props) {
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-5 py-10">
       {/* brand */}
@@ -16,7 +16,7 @@ export function Home({ onStart, onAbout }: Props) {
           <span className="font-display text-lg font-bold tracking-tight">Quotient</span>
         </div>
         <button
-          onClick={onAbout}
+          onClick={() => onNav('about')}
           className="font-body text-sm text-mist underline-offset-4 hover:text-paper hover:underline"
         >
           About
@@ -53,9 +53,7 @@ export function Home({ onStart, onAbout }: Props) {
         </button>
       </main>
 
-      <footer className="border-t border-mist/15 pt-6">
-        <Disclaimer />
-      </footer>
+      <SiteFooter onNav={onNav} />
     </div>
   )
 }

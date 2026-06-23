@@ -1,26 +1,15 @@
-import { useEffect } from 'react'
 import { useTest } from '../store/gameStore'
 import { MIN_QUESTIONS, progressToResult } from '../lib/ability'
 import { QuestionCard } from '../components/QuestionCard'
 
-interface Props {
-  onComplete: () => void
-}
-
-export function Test({ onComplete }: Props) {
+export function Test() {
   const current = useTest((s) => s.current)
   const answers = useTest((s) => s.answers)
-  const finished = useTest((s) => s.finished)
   const ability = useTest((s) => s.ability)
   const submit = useTest((s) => s.submit)
   const mode = useTest((s) => s.mode)
   const legStart = useTest((s) => s.legStart)
   const legTarget = useTest((s) => s.legTarget)
-
-  // When the store flips to finished, move to results.
-  useEffect(() => {
-    if (finished) onComplete()
-  }, [finished, onComplete])
 
   if (!current) {
     return (
