@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react'
 import type { Result } from '../types'
 
+const FLOOR = 55 // lowest possible Quotient — where the count-up starts
+
 /**
  * The signature moment: your Quotient counts up in a precise monospace numeral,
  * framed like a readout on an instrument, with a percentile band beneath.
  * Designed to be screenshotted and shared.
  */
-export function ScoreReveal({ result }: { result: Result }) {
-  const [shown, setShown] = useState(70)
+export function ScoreReveal({
+  result,
+  margin,
+  count,
+}: {
+  result: Result
+  margin?: number
+  count?: number
+}) {
+  const [shown, setShown] = useState(FLOOR)
 
   useEffect(() => {
     const target = result.quotient
@@ -19,7 +29,7 @@ export function ScoreReveal({ result }: { result: Result }) {
       const t = Math.min(1, (now - start) / duration)
       // easeOutCubic for a satisfying settle
       const eased = 1 - Math.pow(1 - t, 3)
-      setShown(Math.round(70 + (target - 70) * eased))
+      setShown(Math.round(FLOOR + (target - FLOOR) * eased))
       if (t < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
@@ -42,6 +52,9 @@ export function ScoreReveal({ result }: { result: Result }) {
       </div>
 
       <p className="mt-4 font-display text-2xl text-coral">{result.label}</p>
+      {margin != null && (
+        <p className="mt-1 font-mono text-xs text-mist">estimate ±{margin}</p>
+      )}
 
       {/* percentile band */}
       <div className="mt-6 w-full max-w-xs">
@@ -58,7 +71,7 @@ export function ScoreReveal({ result }: { result: Result }) {
       </div>
 
       <p className="mt-4 font-body text-sm text-mist">
-        {result.correct} of {result.total} puzzles solved
+        Based on {count ?? result.total} adaptive puzzles
       </p>
     </div>
   )

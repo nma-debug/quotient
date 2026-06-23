@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import Confetti from 'react-confetti'
-import { Share2, RotateCcw, Check, TrendingUp } from 'lucide-react'
-import { useTest } from '../store/gameStore'
-import { scoreAnswers, shareText } from '../lib/scoring'
+import { Share2, RotateCcw, Check, TrendingUp, Plus, Info } from 'lucide-react'
+import { useTest, EXTEND_BY } from '../store/gameStore'
+import { abilityMean, abilitySD } from '../lib/ability'
+import { scoreFromAbility, shareText, quotientMargin } from '../lib/scoring'
 import { ScoreReveal } from '../components/ScoreReveal'
 import { Disclaimer } from '../components/Disclaimer'
 import { AdSlot } from '../components/AdSlot'
@@ -36,16 +37,22 @@ function saveBest(result: Result) {
 
 interface Props {
   onRestart: () => void
+  onExtend: () => void
+  onAbout: () => void
 }
 
-export function Results({ onRestart }: Props) {
+export function Results({ onRestart, onExtend, onAbout }: Props) {
   const answers = useTest((s) => s.answers)
   const questionMap = useTest((s) => s.questionMap)
-  const result = useMemo(() => scoreAnswers(answers), [answers])
+  const ability = useTest((s) => s.ability)
+
+  const result = useMemo(() => scoreFromAbility(abilityMean(ability), answers), [ability, answers])
+  const margin = useMemo(() => quotientMargin(abilitySD(ability)), [ability])
+
   const [copied, setCopied] = useState(false)
   const [prevBest, setPrevBest] = useState<BestScore | null>(null)
 
-  // Save best score on mount; capture previous best first so we can show improvement
+  // Save best score on mount; capture previous best first so we can show improvement.
   useEffect(() => {
     const existing = loadBest()
     setPrevBest(existing)
@@ -55,7 +62,7 @@ export function Results({ onRestart }: Props) {
   }, [result])
 
   const isNewBest = !prevBest || result.quotient > prevBest.quotient
-  const celebrate = result.quotient >= 115 || isNewBest
+  const celebrate = result.quotient >= 115 || (isNewBest && !!prevBest)
 
   async function share() {
     const url = typeof window !== 'undefined' ? window.location.origin : 'quotient.app'
@@ -75,7 +82,7 @@ export function Results({ onRestart }: Props) {
       {celebrate && <Confetti recycle={false} numberOfPieces={140} gravity={0.25} />}
 
       <div className="card animate-popIn p-8 sm:p-10">
-        <ScoreReveal result={result} />
+        <ScoreReveal result={result} margin={margin} count={answers.length} />
 
         {/* Best score / improvement callout */}
         {prevBest && !isNewBest && (
@@ -92,21 +99,33 @@ export function Results({ onRestart }: Props) {
             <TrendingUp size={18} className="shrink-0 text-amber" />
             <p className="font-body text-sm text-paper">
               New personal best!{' '}
-              <span className="text-mist">
-                Up from {prevBest.quotient} ({prevBest.label})
-              </span>
+              <span className="text-mist">Up from {prevBest.quotient} ({prevBest.label})</span>
             </p>
           </div>
         )}
 
-        <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-          <button onClick={share} className="btn-primary flex-1">
+        {/* Actions */}
+        <div className="mt-9 flex flex-col gap-3">
+          <button onClick={share} className="btn-primary w-full">
             {copied ? <><Check size={20} /> Copied!</> : <><Share2 size={20} /> Share my score</>}
           </button>
-          <button onClick={onRestart} className="btn-ghost flex-1">
-            <RotateCcw size={18} />
-            {prevBest && !isNewBest ? 'Improve my score' : 'Play again'}
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button onClick={onExtend} className="btn-ghost flex-1">
+              <Plus size={18} /> Answer {EXTEND_BY} more to sharpen
+            </button>
+            <button onClick={onRestart} className="btn-ghost flex-1">
+              <RotateCcw size={18} /> Play again
+            </button>
+          </div>
+        </div>
+
+        {/* Why the score can still move */}
+        <div className="mt-5 flex items-start gap-2.5 rounded-xl bg-ink-700/60 px-4 py-3">
+          <Info size={15} className="mt-0.5 shrink-0 text-mist" />
+          <p className="font-body text-xs leading-relaxed text-mist">
+            Your Quotient is an estimate of about <span className="text-paper">±{margin}</span>.
+            Answering more puzzles narrows that range and refines the number.
+          </p>
         </div>
       </div>
 
@@ -150,6 +169,12 @@ export function Results({ onRestart }: Props) {
       </section>
 
       <footer className="mt-10 border-t border-mist/15 pt-6">
+        <button
+          onClick={onAbout}
+          className="mb-4 font-body text-sm text-mist underline-offset-4 hover:text-paper hover:underline"
+        >
+          About Quotient & how scoring works
+        </button>
         <Disclaimer />
       </footer>
     </div>
