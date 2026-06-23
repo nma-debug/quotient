@@ -1,14 +1,15 @@
 import { create } from 'zustand'
 import type { Answer, Question } from '../types'
-import { questions as bank } from '../data/questions'
-import { startAdaptive, nextLevel, pickQuestion } from '../lib/adaptivity'
+import { startAdaptive, nextLevel } from '../lib/adaptivity'
+import { generateQuestion } from '../lib/generators'
 
-/** How many questions make up one test. */
 export const TEST_LENGTH = 12
 
 interface TestState {
   current: Question | null
   answers: Answer[]
+  // Map of questionId → Question so Results can look them up without a static bank.
+  questionMap: Record<string, Question>
   level: number
   usedIds: string[]
   finished: boolean
@@ -20,15 +21,17 @@ interface TestState {
 export const useTest = create<TestState>((set, get) => ({
   current: null,
   answers: [],
+  questionMap: {},
   level: startAdaptive.level,
   usedIds: [],
   finished: false,
 
   start: () => {
-    const first = pickQuestion(bank, startAdaptive.level, [])
+    const first = generateQuestion(startAdaptive.level, [])
     set({
       current: first,
       answers: [],
+      questionMap: first ? { [first.id]: first } : {},
       level: startAdaptive.level,
       usedIds: first ? [first.id] : [],
       finished: false,
@@ -36,7 +39,7 @@ export const useTest = create<TestState>((set, get) => ({
   },
 
   submit: (given: string) => {
-    const { current, answers, level, usedIds } = get()
+    const { current, answers, level, usedIds, questionMap } = get()
     if (!current) return
 
     const correct =
@@ -50,16 +53,14 @@ export const useTest = create<TestState>((set, get) => ({
     }
     const nextAnswers = [...answers, answer]
 
-    // Reached the test length? We're done.
     if (nextAnswers.length >= TEST_LENGTH) {
       set({ answers: nextAnswers, current: null, finished: true })
       return
     }
 
     const newLevel = nextLevel(level, correct)
-    const next = pickQuestion(bank, newLevel, usedIds)
+    const next = generateQuestion(newLevel, usedIds)
 
-    // Ran out of questions early — finish gracefully.
     if (!next) {
       set({ answers: nextAnswers, current: null, finished: true })
       return
@@ -67,6 +68,7 @@ export const useTest = create<TestState>((set, get) => ({
 
     set({
       answers: nextAnswers,
+      questionMap: { ...questionMap, [next.id]: next },
       level: newLevel,
       current: next,
       usedIds: [...usedIds, next.id],

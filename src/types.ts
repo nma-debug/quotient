@@ -23,6 +23,8 @@ export interface Question {
   options?: string[]        // for multiple-choice
   answer: string            // the correct answer, as text (compared case-insensitively)
   explanation: string       // shown in the review
+  style?: string            // generator sub-style, e.g. 'arithmetic', 'fibonacci'
+  difficultyRating?: number // 1–1000 intrinsic difficulty used by the adaptive engine
 }
 
 export interface Answer {
