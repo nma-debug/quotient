@@ -7,13 +7,21 @@ import {
   updateAbility,
   type AbilityState,
 } from '../lib/ability'
-import { generateQuestionAtDifficulty } from '../lib/generators'
+import { generateQuestionAtDifficulty, CATEGORIES } from '../lib/generators'
 import { loadRecent, pushRecent } from '../lib/history'
 
 /** How many extra questions one "answer more to improve" round adds. */
 export const EXTEND_BY = 5
 
 type Mode = 'adaptive' | 'extend'
+
+/** Categories ordered least-used-first (random tie-break) to keep tests balanced. */
+function leastUsedOrder(counts: Record<string, number>): string[] {
+  return [...CATEGORIES]
+    .map((c) => ({ c, n: counts[c] ?? 0, r: Math.random() }))
+    .sort((a, b) => a.n - b.n || a.r - b.r)
+    .map((x) => x.c)
+}
 
 interface TestState {
   current: Question | null
@@ -25,6 +33,8 @@ interface TestState {
   usedIds: string[]
   // Questions seen in *recent* sittings (from localStorage) — excluded so replays vary.
   excludeIds: string[]
+  // How many questions of each category have been served (for balancing).
+  categoryCounts: Record<string, number>
   finished: boolean
 
   // Which stopping rule is active, and (for an extend round) where it began/ends.
@@ -47,6 +57,7 @@ export const useTest = create<TestState>((set, get) => ({
   ability: ABILITY_START,
   usedIds: [],
   excludeIds: [],
+  categoryCounts: {},
   finished: false,
   mode: 'adaptive',
   legStart: 0,
@@ -54,7 +65,11 @@ export const useTest = create<TestState>((set, get) => ({
 
   start: () => {
     const excludeIds = loadRecent()
-    const first = generateQuestionAtDifficulty(nextDifficulty(ABILITY_START), excludeIds)
+    const first = generateQuestionAtDifficulty(
+      nextDifficulty(ABILITY_START),
+      excludeIds,
+      leastUsedOrder({}),
+    )
     set({
       current: first,
       answers: [],
@@ -62,6 +77,7 @@ export const useTest = create<TestState>((set, get) => ({
       ability: ABILITY_START,
       usedIds: first ? [first.id] : [],
       excludeIds,
+      categoryCounts: first ? { [first.category]: 1 } : {},
       finished: false,
       mode: 'adaptive',
       legStart: 0,
@@ -70,7 +86,7 @@ export const useTest = create<TestState>((set, get) => ({
   },
 
   submit: (given: string) => {
-    const { current, answers, ability, usedIds, excludeIds, questionMap, mode, legTarget } = get()
+    const { current, answers, ability, usedIds, excludeIds, questionMap, categoryCounts, mode, legTarget } = get()
     if (!current) return
 
     const correct = given.trim().toLowerCase() === current.answer.trim().toLowerCase()
@@ -96,7 +112,11 @@ export const useTest = create<TestState>((set, get) => ({
       return
     }
 
-    const next = generateQuestionAtDifficulty(nextDifficulty(nextAbility), [...excludeIds, ...usedIds])
+    const next = generateQuestionAtDifficulty(
+      nextDifficulty(nextAbility),
+      [...excludeIds, ...usedIds],
+      leastUsedOrder(categoryCounts),
+    )
     if (!next) {
       pushRecent(usedIds)
       set({ answers: nextAnswers, ability: nextAbility, current: null, finished: true })
@@ -109,12 +129,17 @@ export const useTest = create<TestState>((set, get) => ({
       questionMap: { ...questionMap, [next.id]: next },
       current: next,
       usedIds: [...usedIds, next.id],
+      categoryCounts: { ...categoryCounts, [next.category]: (categoryCounts[next.category] ?? 0) + 1 },
     })
   },
 
   extend: (n: number) => {
-    const { ability, usedIds, excludeIds, answers, questionMap } = get()
-    const next = generateQuestionAtDifficulty(nextDifficulty(ability), [...excludeIds, ...usedIds])
+    const { ability, usedIds, excludeIds, answers, questionMap, categoryCounts } = get()
+    const next = generateQuestionAtDifficulty(
+      nextDifficulty(ability),
+      [...excludeIds, ...usedIds],
+      leastUsedOrder(categoryCounts),
+    )
     if (!next) return // nothing fresh to add; stay on the results screen
     set({
       mode: 'extend',
@@ -124,6 +149,7 @@ export const useTest = create<TestState>((set, get) => ({
       current: next,
       questionMap: { ...questionMap, [next.id]: next },
       usedIds: [...usedIds, next.id],
+      categoryCounts: { ...categoryCounts, [next.category]: (categoryCounts[next.category] ?? 0) + 1 },
     })
   },
 }))

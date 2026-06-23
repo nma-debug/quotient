@@ -15,18 +15,20 @@
 
 /** Floor / cap on questions in a single sitting. */
 export const MIN_QUESTIONS = 12
-export const MAX_QUESTIONS = 25
+export const MAX_QUESTIONS = 24
 
 const STEP = 25
 /** Candidate ability levels: 0, 25, 50, … 1000. */
 const GRID: number[] = Array.from({ length: 1000 / STEP + 1 }, (_, i) => i * STEP)
 
 /** Logistic spread (ability units per factor-of-ten change in odds). */
-const SPREAD = 220
-/** Guessing floor — questions are 4-option multiple choice. */
-const GUESS = 0.2
+const SPREAD = 180
+/** Guessing floor — questions are 4-option multiple choice (~25%). */
+const GUESS = 0.25
+/** Slip rate — even able players occasionally answer a known item wrong. */
+const SLIP = 0.08
 /** Posterior SD (ability units) below which the estimate is "confident enough". */
-const SD_TARGET = 80
+const SD_TARGET = 90
 /** Loose SD used to map progress 0→1 for the UI meter. */
 const SD_LOOSE = 210
 
@@ -44,9 +46,14 @@ export const ABILITY_START: AbilityState = {
   asked: 0,
 }
 
-/** Probability a player of ability `a` answers an item of difficulty `d` correctly. */
+/**
+ * Probability a player of ability `a` answers an item of difficulty `d` correctly.
+ * A 3PL-style curve: a guessing floor (4-option MC) and a slip ceiling (able
+ * players still slip occasionally) make the estimate robust to lucky guesses and
+ * careless mistakes.
+ */
 export function pCorrect(a: number, d: number): number {
-  return GUESS + (1 - GUESS) * (1 / (1 + Math.pow(10, (d - a) / SPREAD)))
+  return GUESS + (1 - GUESS - SLIP) * (1 / (1 + Math.pow(10, (d - a) / SPREAD)))
 }
 
 /** Fold one answer into the belief. */

@@ -893,17 +893,31 @@ const GENS_BY_CATEGORY: Record<string, Gen[]> = {
   'odd-one-out': [makeOddOneOut, oddNumeric],
 }
 
-const CATEGORIES = Object.keys(GENS_BY_CATEGORY)
+export const CATEGORIES = Object.keys(GENS_BY_CATEGORY)
 
 /**
  * Generate a fresh question at a target difficulty (1–1000), avoiding `usedIds`.
  * This is the entry point used by the adaptive engine, which serves each question
  * right at the player's current ability estimate.
+ *
+ * `categoryOrder` (optional) lets the caller prioritise categories — used to keep
+ * each test balanced across all reasoning types. Any categories it omits are
+ * appended (shuffled) so a fresh question can always be found.
  */
-export function generateQuestionAtDifficulty(diff: number, usedIds: string[]): Question | null {
+export function generateQuestionAtDifficulty(
+  diff: number,
+  usedIds: string[],
+  categoryOrder?: string[],
+): Question | null {
   const d = Math.max(50, Math.min(950, Math.round(diff)))
   const used = new Set(usedIds)
-  for (const cat of shuffle(CATEGORIES)) {
+  const order = categoryOrder?.length
+    ? [
+        ...categoryOrder.filter((c) => c in GENS_BY_CATEGORY),
+        ...shuffle(CATEGORIES.filter((c) => !categoryOrder.includes(c))),
+      ]
+    : shuffle(CATEGORIES)
+  for (const cat of order) {
     const gens = shuffle(GENS_BY_CATEGORY[cat])
     for (const gen of gens) {
       for (let attempt = 0; attempt < 16; attempt++) {
