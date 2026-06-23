@@ -66,6 +66,10 @@ export function About({ onBack, onNav, onStart }: Props) {
           report a result — so a confident run finishes quickly, while a mixed one runs a little
           longer. Want a sharper number? Answer more puzzles and the estimate tightens.
         </p>
+        <p>
+          Every test also draws evenly across all five reasoning types, so your result reflects a
+          rounded picture of how you think — not just your luck with one kind of puzzle.
+        </p>
       </Section>
 
       <Section title="How scoring works">
@@ -75,6 +79,10 @@ export function About({ onBack, onNav, onStart }: Props) {
           raw count of correct answers. It's centred around 100 and shown with a ± range that
           reflects how certain the estimate is. The percentile is a rough, friendly comparison — not
           a real population statistic.
+        </p>
+        <p>
+          The maths behind it expects the occasional lucky guess or careless slip, so a single odd
+          answer won't swing your result — and replaying should land you in a similar range.
         </p>
       </Section>
 
