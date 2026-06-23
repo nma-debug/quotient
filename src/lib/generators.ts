@@ -1,8 +1,8 @@
 /**
  * Procedural question generators for Quotient, mirroring the Learned app's runtime pattern.
  * Each generator takes a `diff` value (1–1000) and returns a Question or null on failure.
- * The adaptive engine calls generateQuestion(level, usedIds) which maps level → diff and
- * tries generators across all categories until a fresh (unseen) question is produced.
+ * The adaptive engine calls generateQuestionAtDifficulty(diff, usedIds), which tries
+ * generators across all categories until a fresh (unseen) question is produced.
  */
 
 import type { Question, Category, Difficulty } from '../types'
@@ -574,17 +574,18 @@ const GENS_BY_CATEGORY: Record<string, Gen[]> = {
 const CATEGORIES = Object.keys(GENS_BY_CATEGORY)
 
 /**
- * Generate a fresh question not already in `usedIds`.
- * `level` is 1–10; it maps to a 1–1000 difficulty for the generators.
+ * Generate a fresh question at a target difficulty (1–1000), avoiding `usedIds`.
+ * This is the entry point used by the adaptive engine, which serves each question
+ * right at the player's current ability estimate.
  */
-export function generateQuestion(level: number, usedIds: string[]): Question | null {
-  const diff = Math.round(((level - 1) / 9) * 900) + 50  // 1→50, 10→950
+export function generateQuestionAtDifficulty(diff: number, usedIds: string[]): Question | null {
+  const d = Math.max(50, Math.min(950, Math.round(diff)))
   const used = new Set(usedIds)
   for (const cat of shuffle(CATEGORIES)) {
     const gens = shuffle(GENS_BY_CATEGORY[cat])
     for (const gen of gens) {
       for (let attempt = 0; attempt < 10; attempt++) {
-        const q = gen(diff)
+        const q = gen(d)
         if (q && !used.has(q.id)) return q
       }
     }
